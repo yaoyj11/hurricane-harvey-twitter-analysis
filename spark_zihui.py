@@ -34,13 +34,13 @@ def readAllTweets(sc,filepath,num_partitions=10):
   df = sqlContext.read.format('com.databricks.spark.csv').options(header='true',mode="DROPMALFORMED").load(filepath,schema=customSchema)
   return df.rdd.map(lambda x: (x["NO"],x["ID"],x["Likes"],x["Replies"],x["Retweets"],x["Time"],x["Tweet"]))
 
-def parseWord(tweet,tt,types=None,to_remove=[]):
+def parseWord(tweet,tt,types,to_remove=[]):
   words=tt.tokenize(tweet[-1])
   tags=nltk.pos_tag(words)
   res=[]
-  for i in range(len(words)):
-    if words[i] not in to_remove and (types is None or tags[i] in types):
-      res.append((words[i].lower(),tags[i]))
+  for i in range(len(tags)):
+    if tags[i][0] not in to_remove and (types is None or tags[i][1] in types):
+      res.append((tags[i][0].lower(),tags[i][1],tweet[4],tweet[5]))
   return res
 
 def getWords(tweets,types=None,to_remove=[]):
@@ -49,14 +49,34 @@ def getWords(tweets,types=None,to_remove=[]):
   return words
 
 
-def countWord(words,types=None):
-  word_count=words.filter(lambda x:types is None or x[1] in types)\
-    .map(lambda x:(x[0],1))\
-    .reduceByKey(add)
+def countWord(words,types=None,retweets=False):
+
+  word_count=words.filter(lambda x:types is None or x[1] in types)
+  if retweets:
+    word_count=word_count.map(lambda x:(x[0],x[2]+1))
+  else:
+    word_count=word_count.map(lambda x:(x[0],1))
+  word_count=word_count.reduceByKey(add)
   return word_count
+
+#words: ("word",label,retweets,time)
+#return (word,time),count
+def groupWordsByTime(words,retweets=True):
+  if retweets:
+    words=words.map(lambda x:((x[0],x[3].split(":")[0]),x[2]+1))
+  else:
+    words=words.map(lambda x:((x[0],x[3].split(":")[0]),1))
+    words=words.reduceByKey(add)
+    return words
+
+#(words,time),count
+def mergeWords(words_count):
+
 
 
 if __name__== "__main__":
+  ST="8/25/2017 14"
+  ET="8/29/2017 14"
   conf = SparkConf()
   conf.setMaster("local[8]").setAppName("YELP")
   sc = SparkContext(conf=conf)
@@ -76,11 +96,12 @@ if __name__== "__main__":
   types=["DT","JJ","JJR","JJS","MD","NN","NNP","NNPS","NNS","PDT","RB","RBR","RBS","VB","VBD","VBG","VBN","VBP","VBZ"]
   #get words
   words=getWords(tweets,types,to_remove)
+  print("number of words:",words.count())
   words.saveAsTextFile("words")
+  words.saveAsPickleFile("wordspickle")
   #count words
   word_count=countWord(words)
   word_count.saveAsTextFile("word_count")
+  word_count.saveAsPickleFile("wordspickle")
   print(word_count.sortBy(keyfunc=lambda x:x[1],ascending=False,numPartitions=num_partitions).top(50))
-
-
 
