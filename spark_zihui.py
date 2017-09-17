@@ -12,7 +12,6 @@ import math
 import nltk
 import pandas as pd
 from nltk import TweetTokenizer
-from operator import add
 
 def parseTweets(tweet):
   csv_reader=csv.reader([tweet])
@@ -66,12 +65,22 @@ def groupWordsByTime(words,retweets=True):
     words=words.map(lambda x:((x[0],x[3].split(":")[0]),x[2]+1))
   else:
     words=words.map(lambda x:((x[0],x[3].split(":")[0]),1))
-    words=words.reduceByKey(add)
-    return words
+  words=words.reduceByKey(add)
+  return words
 
 #(words,time),count
-def mergeWords(words_count):
+def firstK(l,k):
+  l=list(l)
+  l=sorted(l,key=lambda x:-x[1])
+  return l[0:k]
 
+def mergeWords(words_count,K=100,num_partitions=10):
+  agg=words_count.map(lambda x:(x[0][1],(x[0][0],x[1])))\
+      .groupByKey()\
+      .map(lambda x:(x[0],firstK(x[1],K)))
+  return agg
+
+#draw word_cloud
 
 
 if __name__== "__main__":
@@ -85,6 +94,7 @@ if __name__== "__main__":
   print("Set log level to Error")
   num_partitions=10
   sqlContext=SQLContext(sc)
+  #tweets=readAllTweets(sqlContext,"small.csv",num_partitions)
   tweets=readAllTweets(sqlContext,"Harvey_tweets.csv",num_partitions)
   print("finished reading ",tweets.count())
 #364255
@@ -102,6 +112,15 @@ if __name__== "__main__":
   #count words
   word_count=countWord(words)
   word_count.saveAsTextFile("word_count")
-  word_count.saveAsPickleFile("wordspickle")
+  word_count.saveAsPickleFile("word_countpickle")
   print(word_count.sortBy(keyfunc=lambda x:x[1],ascending=False,numPartitions=num_partitions).top(50))
 
+  words=groupWordsByTime(words)
+#(word,time),count
+  print(words.top(10))
+  words=mergeWords(words)
+  print(words.top(10))
+  words.saveAsTextFile("period")
+
+
+  prin  (words.top(10))
